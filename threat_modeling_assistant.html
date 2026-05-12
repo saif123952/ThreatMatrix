@@ -1,0 +1,978 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ThreatMatrix | Mobile Threat Modeling assistant</title>
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&family=Syne:wght@600;800&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg-dark: #060912;
+            --sidebar-bg: #0b0f1a;
+            --cyan: #00f5d4;
+            --cyan-glow: rgba(0, 245, 212, 0.3);
+            --amber: #ffb347;
+            --red: #ff4757;
+            --green: #2ed573;
+            --purple: #a29bfe;
+            --text-main: #e0e6ed;
+            --text-dim: #94a3b8;
+            --border: #1e293b;
+            --font-mono: 'JetBrains Mono', monospace;
+            --font-heading: 'Syne', sans-serif;
+        }
+
+        /* Basic Setup */
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            background-color: var(--bg-dark);
+            color: var(--text-main);
+            font-family: var(--font-mono);
+            height: 100vh;
+            display: grid;
+            grid-template-rows: auto 1fr;
+            overflow: hidden;
+            position: relative;
+        }
+
+        /* Mesh Background */
+        body::before {
+            content: "";
+            position: absolute;
+            top: 0; left: 0; width: 100%; height: 100%;
+            background: radial-gradient(circle at 50% 50%, rgba(162, 155, 254, 0.05) 0%, transparent 70%),
+                        radial-gradient(circle at 80% 20%, rgba(0, 245, 212, 0.05) 0%, transparent 50%);
+            z-index: -1;
+            pointer-events: none;
+        }
+
+        /* Scanlines Overlay */
+        body::after {
+            content: "";
+            position: fixed;
+            top: 0; left: 0; width: 100vw; height: 100vh;
+            background: linear-gradient(rgba(18, 16, 16, 0) 50%, rgba(0, 0, 0, 0.15) 50%), 
+                        linear-gradient(90deg, rgba(255, 0, 0, 0.02), rgba(0, 255, 0, 0.01), rgba(0, 0, 255, 0.02));
+            background-size: 100% 3px, 2px 100%;
+            z-index: 1000;
+            pointer-events: none;
+            opacity: 0.4;
+        }
+
+        /* Layout */
+        .header {
+            background: var(--sidebar-bg);
+            border-bottom: 1px solid var(--border);
+            padding: 0.75rem 1.5rem;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            position: sticky;
+            top: 0;
+            z-index: 100;
+        }
+
+        .logo {
+            font-family: var(--font-heading);
+            font-size: 1.4rem;
+            color: var(--cyan);
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            text-transform: uppercase;
+        }
+
+        .status-dot {
+            width: 10px;
+            height: 10px;
+            background: var(--green);
+            border-radius: 50%;
+            box-shadow: 0 0 10px var(--green);
+            animation: blink 1.5s infinite;
+        }
+
+        @keyframes blink {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.3; }
+        }
+
+        .container {
+            display: grid;
+            grid-template-columns: 380px 1fr;
+            height: 100%;
+            overflow: hidden;
+        }
+
+        /* Sidebar Styling */
+        .sidebar {
+            background: var(--sidebar-bg);
+            border-right: 1px solid var(--border);
+            padding: 1.5rem;
+            overflow-y: auto;
+            scrollbar-width: thin;
+        }
+
+        .section-title {
+            font-family: var(--font-heading);
+            font-size: 0.8rem;
+            color: var(--text-dim);
+            text-transform: uppercase;
+            margin-bottom: 1rem;
+            border-bottom: 1px solid var(--border);
+            padding-bottom: 0.5rem;
+            letter-spacing: 1px;
+        }
+
+        .form-group { margin-bottom: 1.25rem; }
+        label { display: block; font-size: 0.7rem; color: var(--cyan); margin-bottom: 0.4rem; text-transform: uppercase; }
+        
+        textarea, select, input[type="password"] {
+            width: 100%;
+            background: #0d111b;
+            border: 1px solid var(--border);
+            color: white;
+            padding: 0.6rem;
+            font-family: var(--font-mono);
+            font-size: 0.8rem;
+            border-radius: 4px;
+            transition: border-color 0.3s, box-shadow 0.3s;
+        }
+
+        textarea:focus, input:focus {
+            outline: none;
+            border-color: var(--cyan);
+            box-shadow: 0 0 8px var(--cyan-glow);
+        }
+
+        .checkbox-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 0.4rem;
+            font-size: 0.7rem;
+        }
+
+        .check-item { display: flex; align-items: center; gap: 8px; cursor: pointer; color: var(--text-dim); }
+        .check-item input { accent-color: var(--cyan); }
+
+        .btn-init {
+            width: 100%;
+            background: var(--cyan);
+            color: #000;
+            border: none;
+            padding: 1rem;
+            font-family: var(--font-heading);
+            font-weight: 800;
+            cursor: pointer;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            margin-top: 1rem;
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+
+        .btn-init:hover { transform: translateY(-2px); box-shadow: 0 4px 15px var(--cyan); }
+
+        .framework-toggle {
+            display: flex;
+            background: #0d111b;
+            border: 1px solid var(--border);
+            border-radius: 4px;
+            overflow: hidden;
+            margin-top: 0.5rem;
+        }
+
+        .toggle-btn {
+            flex: 1;
+            padding: 0.5rem;
+            text-align: center;
+            font-size: 0.7rem;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+
+        .toggle-btn.active { background: var(--cyan); color: #000; font-weight: bold; }
+
+        /* Main Area */
+        .main-area {
+            padding: 2rem;
+            overflow-y: auto;
+            position: relative;
+        }
+
+        /* STATE 1: Empty */
+        .empty-state {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100%;
+            opacity: 0.6;
+        }
+
+        .rotating-ring {
+            width: 80px;
+            height: 80px;
+            border: 4px solid var(--border);
+            border-top: 4px solid var(--cyan);
+            border-radius: 50%;
+            animation: spin 2s linear infinite;
+            margin-bottom: 1.5rem;
+        }
+
+        @keyframes spin { 100% { transform: rotate(360deg); } }
+
+        /* STATE 2: Loading */
+        .terminal-window {
+            background: #0d111b;
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            width: 100%;
+            max-width: 800px;
+            margin: 0 auto;
+            box-shadow: 0 20px 50px rgba(0,0,0,0.5);
+            display: none;
+        }
+
+        .terminal-header {
+            background: #1e293b;
+            padding: 10px 15px;
+            display: flex;
+            gap: 8px;
+            border-top-left-radius: 8px;
+            border-top-right-radius: 8px;
+        }
+
+        .dot { width: 12px; height: 12px; border-radius: 50%; }
+        .dot.red { background: #ff5f56; }
+        .dot.yellow { background: #ffbd2e; }
+        .dot.green { background: #27c93f; }
+
+        .terminal-body {
+            padding: 20px;
+            font-size: 0.9rem;
+            color: var(--cyan);
+            min-height: 400px;
+        }
+
+        .terminal-line { margin-bottom: 8px; line-height: 1.4; display: none; }
+        .cursor { display: inline-block; width: 8px; height: 18px; background: var(--cyan); margin-left: 5px; animation: blink 1s step-end infinite; }
+
+        /* STATE 3: Results */
+        .results-view { display: none; animation: slideUp 0.6s ease-out forwards; }
+        @keyframes slideUp { from { opacity: 0; transform: translateY(30px); } to { opacity: 1; transform: translateY(0); } }
+
+        /* Security Score Panel */
+        .score-panel {
+            background: linear-gradient(90deg, rgba(6, 9, 18, 0.9), rgba(11, 15, 26, 0.9));
+            border: 1px solid var(--border);
+            border-top: 3px solid var(--cyan);
+            padding: 2rem;
+            border-radius: 8px;
+            display: grid;
+            grid-template-columns: auto 1fr;
+            gap: 3rem;
+            margin-bottom: 2rem;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .score-panel::after {
+            content: "";
+            position: absolute;
+            top: 0; left: 0; width: 100%; height: 4px;
+            background: linear-gradient(90deg, var(--cyan), var(--purple), var(--amber));
+        }
+
+        .donut-container { position: relative; width: 160px; height: 160px; }
+        .donut-svg { transform: rotate(-90deg); }
+        .donut-bg { fill: none; stroke: var(--border); stroke-width: 12; }
+        .donut-fill { 
+            fill: none; stroke: var(--cyan); stroke-width: 12; 
+            stroke-dasharray: 440; stroke-dashoffset: 440; 
+            transition: stroke-dashoffset 1.5s ease-out;
+            stroke-linecap: round;
+        }
+        .score-text {
+            position: absolute;
+            top: 50%; left: 50%;
+            transform: translate(-50%, -50%);
+            text-align: center;
+        }
+        .score-num { font-family: var(--font-heading); font-size: 2.5rem; color: var(--cyan); display: block; }
+        .score-label { font-size: 0.6rem; color: var(--text-dim); text-transform: uppercase; }
+
+        .masvs-bars { display: flex; flex-direction: column; gap: 1rem; justify-content: center; }
+        .bar-item { display: grid; grid-template-columns: 200px 1fr 40px; align-items: center; gap: 1rem; }
+        .bar-title { font-size: 0.7rem; text-transform: uppercase; color: var(--text-dim); }
+        .bar-bg { height: 6px; background: var(--border); border-radius: 3px; overflow: hidden; }
+        .bar-fill { height: 100%; width: 0%; transition: width 1s ease-in-out; border-radius: 3px; }
+        .bar-val { font-size: 0.7rem; color: var(--cyan); text-align: right; }
+
+        /* Tables & Tabs */
+        .tabs-nav { display: flex; gap: 10px; margin-bottom: 1rem; }
+        .tab-btn {
+            background: #0d111b; border: 1px solid var(--border); color: var(--text-dim);
+            padding: 10px 20px; font-family: var(--font-heading); font-size: 0.8rem;
+            cursor: pointer; transition: 0.3s; text-transform: uppercase;
+        }
+        .tab-btn.active { background: var(--cyan); border-color: var(--cyan); color: #000; }
+
+        .tab-content { background: #0d111b; border: 1px solid var(--border); border-radius: 8px; padding: 1rem; display: none; }
+        .tab-content.active { display: block; }
+
+        table { width: 100%; border-collapse: collapse; font-size: 0.75rem; color: var(--text-main); }
+        th { text-align: left; padding: 12px; color: var(--cyan); border-bottom: 1px solid var(--border); text-transform: uppercase; }
+        td { padding: 12px; border-bottom: 1px solid var(--border); vertical-align: top; line-height: 1.5; }
+        tr:hover td { background: rgba(0, 245, 212, 0.05); }
+
+        /* Badges */
+        .badge { padding: 2px 6px; border-radius: 4px; font-weight: bold; font-size: 0.65rem; text-transform: uppercase; }
+        .badge-critical { background: var(--red); color: white; box-shadow: 0 0 8px rgba(255, 71, 87, 0.4); }
+        .badge-high { background: #ff7f50; color: white; }
+        .badge-medium { background: var(--amber); color: black; }
+        .badge-low { background: var(--green); color: black; }
+
+        .pill { background: var(--purple); color: white; padding: 2px 8px; border-radius: 12px; font-size: 0.6rem; display: inline-block; margin: 2px; }
+
+        .score-box { 
+            display: inline-block; width: 24px; height: 24px; line-height: 24px; text-align: center; 
+            border-radius: 4px; font-weight: bold; color: black;
+        }
+
+        /* Gap Section */
+        .gap-panel {
+            background: rgba(255, 179, 71, 0.05);
+            border: 1px solid var(--amber);
+            border-radius: 8px;
+            padding: 1.5rem;
+            margin-top: 2rem;
+            position: relative;
+        }
+        .gap-title { color: var(--amber); font-family: var(--font-heading); font-size: 0.9rem; margin-bottom: 1rem; display: flex; align-items: center; gap: 10px; }
+        .gap-item { margin-bottom: 8px; color: var(--amber); opacity: 0.9; }
+
+        /* Buttons */
+        .actions { display: flex; gap: 1rem; margin-top: 2rem; }
+        .btn-action {
+            flex: 1; padding: 0.8rem; border: 1px solid var(--border); background: transparent;
+            color: var(--text-dim); cursor: pointer; font-family: var(--font-mono); font-size: 0.8rem;
+            text-transform: uppercase; transition: 0.3s;
+        }
+        .btn-action:hover { border-color: var(--cyan); color: var(--cyan); }
+
+        /* Custom Scrollbar */
+        ::-webkit-scrollbar { width: 5px; }
+        ::-webkit-scrollbar-track { background: var(--bg-dark); }
+        ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 10px; }
+        ::-webkit-scrollbar-thumb:hover { background: var(--cyan); }
+
+        .error-msg { color: var(--red); font-weight: bold; padding: 1rem; border: 1px solid var(--red); background: rgba(255, 71, 87, 0.1); margin-top: 1rem; }
+
+        @media print {
+            .sidebar, .header, .actions, .tabs-nav { display: none; }
+            body { overflow: visible; height: auto; background: white; color: black; }
+            .container { display: block; }
+            .main-area { width: 100%; padding: 0; }
+            .tab-content { display: block !important; border: none; padding: 0; margin-bottom: 40px; page-break-inside: avoid; }
+            .score-panel { border: 2px solid #000; break-inside: avoid; }
+            td, th { color: black !important; border-bottom: 1px solid #ddd; }
+        }
+    </style>
+</head>
+<body>
+
+    <header class="header">
+        <div class="logo">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path></svg>
+            ThreatMatrix
+        </div>
+        <div style="display: flex; align-items: center; gap: 10px;">
+            <span style="font-size: 0.7rem; color: var(--text-dim);">SYSTEM STATUS: OPTIMAL</span>
+            <div class="status-dot"></div>
+        </div>
+    </header>
+
+    <div class="container">
+        <aside class="sidebar">
+            <div class="form-group">
+                <label>Groq API Key (required for AI)</label>
+                <input type="password" id="apiKey" placeholder="ENTER GROQ API KEY OR PROXY KEY">
+            </div>
+
+            <div class="section-title">Application Core</div>
+            <div class="form-group">
+                <label>App Name & High-Level Purpose</label>
+                <textarea id="appName" rows="2">SecurePay Mobile Banking</textarea>
+                <textarea id="appDesc" rows="3" style="margin-top:5px;">Mobile banking app for transfers, bill payments, account management</textarea>
+            </div>
+
+            <div class="form-group">
+                <label>Application Surface Type</label>
+                <select id="appType">
+                    <option value="Banking" selected>Banking</option>
+                    <option value="Healthcare">Healthcare</option>
+                    <option value="E-commerce">E-commerce</option>
+                    <option value="Social Media">Social Media</option>
+                    <option value="IoT">IoT</option>
+                    <option value="Other">Other</option>
+                </select>
+            </div>
+
+            <div class="form-group">
+                <label>Functionality Screens</label>
+                <textarea id="screens" rows="3">Login, Dashboard, Transfer Money, Transaction History, QR Scanner, Profile Settings, Support Chat</textarea>
+            </div>
+
+            <div class="form-group">
+                <label>Device Permissions Required</label>
+                <div class="checkbox-grid" id="permGrid">
+                    <label class="check-item"><input type="checkbox" value="Camera" checked> Camera</label>
+                    <label class="check-item"><input type="checkbox" value="Location"> Location</label>
+                    <label class="check-item"><input type="checkbox" value="Contacts"> Contacts</label>
+                    <label class="check-item"><input type="checkbox" value="Storage"> Storage</label>
+                    <label class="check-item"><input type="checkbox" value="Biometric" checked> Biometric</label>
+                    <label class="check-item"><input type="checkbox" value="Microphone"> Microphone</label>
+                    <label class="check-item"><input type="checkbox" value="Bluetooth"> Bluetooth</label>
+                    <label class="check-item"><input type="checkbox" value="Internet" checked> Internet</label>
+                    <label class="check-item"><input type="checkbox" value="NFC" checked> NFC</label>
+                </div>
+            </div>
+
+            <div class="section-title">Infrastructural Context</div>
+            <div class="form-group">
+                <label>Network Endpoints (JSON/REST)</label>
+                <textarea id="endpoints" rows="3">/auth/login, /auth/refresh, /transfer, /balance, /transactions, /user/profile</textarea>
+            </div>
+
+            <div class="form-group">
+                <label>Authentication Schemes</label>
+                <div class="checkbox-grid">
+                    <label class="check-item"><input type="checkbox" value="PIN"> PIN</label>
+                    <label class="check-item"><input type="checkbox" value="Biometric" checked> Biometric</label>
+                    <label class="check-item"><input type="checkbox" value="OAuth"> OAuth</label>
+                    <label class="check-item"><input type="checkbox" value="JWT" checked> JWT</label>
+                    <label class="check-item"><input type="checkbox" value="Session Token"> Session Token</label>
+                </div>
+            </div>
+
+            <div class="form-group">
+                <label>Local Persistent Assets</label>
+                <div class="checkbox-grid">
+                    <label class="check-item"><input type="checkbox" value="Credentials" checked> Credentials</label>
+                    <label class="check-item"><input type="checkbox" value="PII" checked> PII</label>
+                    <label class="check-item"><input type="checkbox" value="Payment Data" checked> Payment Data</label>
+                    <label class="check-item"><input type="checkbox" value="Health Data"> Health Data</label>
+                    <label class="check-item"><input type="checkbox" value="Tokens" checked> Tokens</label>
+                </div>
+            </div>
+
+            <div class="form-group">
+                <label>Data Transport Protocol</label>
+                <div class="checkbox-grid">
+                    <label class="check-item"><input type="radio" name="backend" value="REST API" checked> REST API</label>
+                    <label class="check-item"><input type="radio" name="backend" value="GraphQL"> GraphQL</label>
+                    <label class="check-item"><input type="radio" name="backend" value="gRPC"> gRPC</label>
+                    <label class="check-item"><input type="radio" name="backend" value="WebSocket"> WebSocket</label>
+                </div>
+            </div>
+
+            <div class="form-group">
+                <label>Analysis Framework Toggle</label>
+                <div class="framework-toggle">
+                    <div class="toggle-btn active" id="toggleStride">STRIDE</div>
+                    <div class="toggle-btn" id="toggleLinddun">LINDDUN</div>
+                </div>
+            </div>
+
+            <div style="display: flex; gap: 10px; margin-top: 1rem;">
+                <button class="btn-init" id="btnInit" style="margin-top: 0; padding: 0.8rem; font-size: 0.8rem;">OFFLINE SCAN</button>
+                <button class="btn-init" id="btnInitAI" style="margin-top: 0; background: var(--purple); color: white; padding: 0.8rem; font-size: 0.8rem;">ANALYZE WITH AI</button>
+            </div>
+        </aside>
+
+        <main class="main-area">
+            <!-- State 1: Empty -->
+            <div class="empty-state" id="viewEmpty">
+                <div class="rotating-ring"></div>
+                <p>Configure your application and click Initialize Analysis</p>
+            </div>
+
+            <!-- State 2: Loading Terminal -->
+            <div class="terminal-window" id="viewLoading">
+                <div class="terminal-header">
+                    <div class="dot red"></div>
+                    <div class="dot yellow"></div>
+                    <div class="dot green"></div>
+                </div>
+                <div class="terminal-body" id="terminalBody">
+                    <div class="terminal-line">> INITIALIZING THREAT SURFACE SCAN...</div>
+                    <div class="terminal-line">> LOADING STRIDE/LINDDUN FRAMEWORK...</div>
+                    <div class="terminal-line">> MAPPING APPLICATION ASSETS...</div>
+                    <div class="terminal-line">> ANALYZING ATTACK VECTORS...</div>
+                    <div class="terminal-line">> GENERATING RISK REGISTER...</div>
+                    <div class="terminal-line">> MAPPING TO OWASP MASVS CONTROLS...</div>
+                    <div class="terminal-line">> COMPUTING SECURITY POSTURE SCORE...</div>
+                    <div class="terminal-line">> ANALYSIS COMPLETE ✓</div>
+                    <div id="terminalCursor" class="cursor hide"></div>
+                </div>
+            </div>
+
+            <!-- State 3: Results -->
+            <div class="results-view" id="viewResults">
+                <div class="score-panel">
+                    <div class="donut-container">
+                        <svg class="donut-svg" width="160" height="160">
+                            <circle class="donut-bg" cx="80" cy="80" r="70"></circle>
+                            <circle class="donut-fill" id="overallDonut" cx="80" cy="80" r="70"></circle>
+                        </svg>
+                        <div class="score-text">
+                            <span class="score-num" id="overallScoreNum">0</span>
+                            <span class="score-label">POSTURE</span>
+                        </div>
+                    </div>
+                    <div class="masvs-bars">
+                        <div class="bar-item">
+                            <span class="bar-title">Chap.1 Architecture</span>
+                            <div class="bar-bg"><div class="bar-fill" id="bar-arch"></div></div>
+                            <span class="bar-val" id="val-arch">0%</span>
+                        </div>
+                        <div class="bar-item">
+                            <span class="bar-title">Chap.4 Authentication</span>
+                            <div class="bar-bg"><div class="bar-fill" id="bar-auth"></div></div>
+                            <span class="bar-val" id="val-auth">0%</span>
+                        </div>
+                        <div class="bar-item">
+                            <span class="bar-title">Chap.6 Platform Interaction</span>
+                            <div class="bar-bg"><div class="bar-fill" id="bar-platform"></div></div>
+                            <span class="bar-val" id="val-platform">0%</span>
+                        </div>
+                        <div class="bar-item">
+                            <span class="bar-title">Chap.9 Network</span>
+                            <div class="bar-bg"><div class="bar-fill" id="bar-network"></div></div>
+                            <span class="bar-val" id="val-network">0%</span>
+                        </div>
+                        <div class="bar-item">
+                            <span class="bar-title">Chap.14 Code Quality</span>
+                            <div class="bar-bg"><div class="bar-fill" id="bar-code"></div></div>
+                            <span class="bar-val" id="val-code">0%</span>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="tabs-nav">
+                    <button class="tab-btn active" data-tab="tabSummary">AI Summary</button>
+                    <button class="tab-btn" data-tab="tabStride">STRIDE</button>
+                    <button class="tab-btn" data-tab="tabLinddun">LINDDUN</button>
+                    <button class="tab-btn" data-tab="tabRisk">Risk Register</button>
+                    <button class="tab-btn" data-tab="tabMitigation">Mitigations</button>
+                </div>
+
+                <div id="tabSummary" class="tab-content active">
+                    <div id="aiSummaryContent" style="color: var(--text-main); font-size: 0.85rem; line-height: 1.6;">
+                        <p style="color: var(--text-dim);">Run an AI analysis to see the application summary, assets, and actors.</p>
+                    </div>
+                </div>
+
+                <div id="tabStride" class="tab-content">
+                    <table id="tableStride">
+                        <thead>
+                            <tr><th>Category</th><th>Threat Description</th><th>Affected Component</th><th>Severity</th><th>Likelihood</th></tr>
+                        </thead>
+                        <tbody></tbody>
+                    </table>
+                </div>
+
+                <div id="tabLinddun" class="tab-content">
+                    <table id="tableLinddun">
+                        <thead>
+                            <tr><th>Category</th><th>Privacy Threat</th><th>Affected Component</th><th>Severity</th><th>Likelihood</th></tr>
+                        </thead>
+                        <tbody></tbody>
+                    </table>
+                </div>
+
+                <div id="tabRisk" class="tab-content">
+                    <table id="tableRisk">
+                        <thead>
+                            <tr><th>ID</th><th>Description</th><th>Asset</th><th>Actor</th><th>Vector</th><th>L</th><th>I</th><th>Score</th><th>Priority</th></tr>
+                        </thead>
+                        <tbody></tbody>
+                    </table>
+                </div>
+
+                <div id="tabMitigation" class="tab-content">
+                    <table id="tableMitigation">
+                        <thead>
+                            <tr><th>Risk ID</th><th>Mitigation Strategy</th><th>MASVS Controls</th><th>Chapter</th></tr>
+                        </thead>
+                        <tbody></tbody>
+                    </table>
+                </div>
+
+                <div class="gap-panel">
+                    <div class="gap-title">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
+                        ⚠ MISSING INFORMATION DETECTED
+                    </div>
+                    <div id="missingInfoContainer"></div>
+                </div>
+
+                <div class="actions">
+                    <button class="btn-action" onclick="window.print()">Export Full Report (PDF)</button>
+                    <button class="btn-action" id="btnExportCSV">Copy Risk Register (CSV)</button>
+                </div>
+            </div>
+
+            <div id="errorArea"></div>
+        </main>
+    </div>
+
+    <script>
+        // Global State
+        let analysisResult = null;
+
+        // Toggle Framework
+        const tStride = document.getElementById('toggleStride');
+        const tLinddun = document.getElementById('toggleLinddun');
+        tStride.onclick = () => { tStride.classList.add('active'); tLinddun.classList.remove('active'); };
+        tLinddun.onclick = () => { tLinddun.classList.add('active'); tStride.classList.remove('active'); };
+
+        // Tab Switching
+        document.querySelectorAll('.tab-btn').forEach(btn => {
+            btn.onclick = () => {
+                document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+                document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+                btn.classList.add('active');
+                document.getElementById(btn.dataset.tab).classList.add('active');
+            };
+        });
+
+        // Initialize Analysis
+        async function startAnalysisUI() {
+            const apiKeyInput = document.getElementById('apiKey').value;
+            
+            // UI States
+            document.getElementById('viewEmpty').style.display = 'none';
+            document.getElementById('viewResults').style.display = 'none';
+            document.getElementById('viewLoading').style.display = 'block';
+            document.getElementById('errorArea').innerHTML = '';
+
+            // Terminal Animation
+            const lines = document.querySelectorAll('.terminal-line');
+            lines.forEach(l => l.style.display = 'none');
+            document.getElementById('terminalCursor').classList.add('hide');
+
+            for (let i = 0; i < lines.length; i++) {
+                await new Promise(r => setTimeout(r, 600));
+                lines[i].style.display = 'block';
+            }
+            document.getElementById('terminalCursor').classList.remove('hide');
+            return apiKeyInput;
+        }
+
+        function getAppData() {
+            return {
+                name: document.getElementById('appName').value,
+                desc: document.getElementById('appDesc').value,
+                type: document.getElementById('appType').value,
+                screens: document.getElementById('screens').value,
+                perms: Array.from(document.querySelectorAll('#permGrid input:checked')).map(c => c.value),
+                endpoints: document.getElementById('endpoints').value,
+                auth: Array.from(document.querySelectorAll('.sidebar input[type="checkbox"]:checked')).map(c => c.value),
+                assets: Array.from(document.querySelectorAll('.sidebar input[type="checkbox"]:checked')).map(c => c.value),
+                backend: document.querySelector('input[name="backend"]:checked').value
+            };
+        }
+
+        document.getElementById('btnInit').onclick = async () => {
+            try {
+                await startAnalysisUI();
+                const appData = getAppData();
+                const result = generateOfflineAnalysis(appData);
+                analysisResult = result;
+                await new Promise(r => setTimeout(r, 800));
+                renderResults(result);
+            } catch (err) {
+                showError(err.message);
+            }
+        };
+
+        document.getElementById('btnInitAI').onclick = async () => {
+            try {
+                const apiKey = await startAnalysisUI();
+                if (!apiKey) throw new Error("Groq API Key is required for AI Analysis.");
+                const appData = getAppData();
+                const result = await generateAIAnalysis(appData, apiKey);
+                analysisResult = result;
+                renderResults(result);
+            } catch (err) {
+                showError(err.message);
+            }
+        };
+
+        function showError(msg) {
+            document.getElementById('viewLoading').style.display = 'none';
+            document.getElementById('errorArea').innerHTML = `<div class="error-msg">> SYSTEM ERROR: ${msg}</div>`;
+        }
+
+        async function generateAIAnalysis(appData, apiKey, model = "llama-3.1-70b-versatile") {
+            const prompt = `You are a cybersecurity threat modeling assistant. Analyze the application and return strict JSON structured output including:
+- summary (string): A comprehensive summary of the application
+- assets (array of strings): Key assets identified
+- actors (array of strings): Potential threat actors
+- stride (array of objects): { category (string), description (string), component (string), severity (Low/Medium/High/Critical), likelihood (Low/Medium/High/Critical) }
+- linddun (array of objects): { category (string), description (string), component (string), severity (Low/Medium/High/Critical), likelihood (Low/Medium/High/Critical) }
+- riskRegister (array of objects): { id (string like R-001), description (string), asset (string), threatActor (string), attackVector (string), likelihood (number 1-5), impact (number 1-5), riskScore (number 1-25), priority (Low/Medium/High/Critical) }
+- mitigations (array of objects): { riskId (string matching riskRegister), mitigation (string), masvs (array of strings like "MASVS-AUTH-1"), chapter (number) }
+- missingInfo (array of strings): Questions to improve analysis
+- securityScore (object): { overall (number 0-100), architecture (number 0-100), authentication (number 0-100), platformInteraction (number 0-100), network (number 0-100), codeQuality (number 0-100) }
+
+Application Details:
+Name: ${appData.name}
+Description: ${appData.desc}
+Type: ${appData.type}
+Screens: ${appData.screens}
+Permissions: ${appData.perms.join(', ')}
+Endpoints: ${appData.endpoints}
+Auth: ${appData.auth.join(', ')}
+Assets: ${appData.assets.join(', ')}
+Backend: ${appData.backend}
+
+Return ONLY valid JSON. Do not include markdown formatting or explanations outside the JSON object.`;
+
+            const doFetch = async (modelName) => {
+                const response = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+                    method: "POST",
+                    headers: {
+                        "Authorization": `Bearer ${apiKey}`,
+                        "Content-Type": "application/json"
+                    },
+                    body: JSON.stringify({
+                        model: modelName,
+                        messages: [{ role: "system", content: prompt }],
+                        temperature: 0.2,
+                        response_format: { type: "json_object" }
+                    })
+                });
+                
+                if (!response.ok) {
+                    const err = await response.json();
+                    throw new Error(err.error?.message || "API request failed");
+                }
+                
+                const data = await response.json();
+                return JSON.parse(data.choices[0].message.content);
+            };
+
+            try {
+                return await doFetch(model);
+            } catch (err) {
+                if (model === "llama-3.1-70b-versatile") {
+                    console.log("Fallback to llama-3.1-8b-instant due to error:", err);
+                    return await doFetch("llama-3.1-8b-instant");
+                }
+                throw err;
+            }
+        }
+
+        function generateOfflineAnalysis(appData) {
+            const stride = [];
+            const linddun = [];
+            const riskRegister = [];
+            const mitigations = [];
+            const missingInfo = [
+                "Is SSL pinning implemented for all network communication?",
+                "Are sensitive strings obfuscated in the binary?",
+                "Is root/jailbreak detection active in the code level?"
+            ];
+
+            let score = 95; // Starting high
+
+            // 1. JWT -> Token theft risk
+            if (appData.auth.includes('JWT')) {
+                const id = "R-001";
+                stride.push({ category: "Information Disclosure", description: "JWT Token theft via local storage or log sniffing", component: "Local Storage / Auth Module", severity: "Medium", likelihood: "Medium" });
+                riskRegister.push({ id, description: "Intercepted JWT allows session hijacking", asset: "User Session", threatActor: "Local Attacker / Malware", attackVector: "Insecure Storage / Interception", likelihood: 3, impact: 4, riskScore: 12, priority: "Medium" });
+                mitigations.push({ riskId: id, mitigation: "Use secure hardware-backed storage (KeyStore/Keychain) for tokens.", masvs: ["MASVS-STORAGE-1", "MASVS-AUTH-1"], chapter: 4 });
+                score -= 8;
+            }
+
+            // 2. Credentials/PII -> Sensitive data exposure
+            if (appData.assets.includes('Credentials') || appData.assets.includes('PII')) {
+                const id = "R-002";
+                stride.push({ category: "Information Disclosure", description: "PII or Credentials leaked from local database", component: "SQLite / SharedPrefs", severity: "High", likelihood: "Low" });
+                riskRegister.push({ id, description: "Sensitive user data exposed to unauthorized apps", asset: "Credentials/PII", threatActor: "Side-channel / Malicious App", attackVector: "Insecure File Permissions", likelihood: 2, impact: 5, riskScore: 10, priority: "High" });
+                mitigations.push({ riskId: id, mitigation: "Encrypt sensitive data using AES-256 with keys stored in Secure Enclave.", masvs: ["MASVS-STORAGE-2"], chapter: 1 });
+                score -= 12;
+            }
+
+            // 3. Payment Data -> Financial data breach risk
+            if (appData.assets.includes('Payment Data')) {
+                const id = "R-003";
+                stride.push({ category: "Tampering", description: "Financial data manipulation or theft", component: "Transaction Module", severity: "Critical", likelihood: "Low" });
+                riskRegister.push({ id, description: "Theft of card details or transfer manipulation", asset: "Payment Info", threatActor: "Compromised Middleware", attackVector: "Transaction Interception", likelihood: 2, impact: 5, riskScore: 10, priority: "Critical" });
+                mitigations.push({ riskId: id, mitigation: "Adhere to PCI-DSS, use end-to-end encryption for transactional payloads.", masvs: ["MASVS-CRYPTO-1"], chapter: 6 });
+                score -= 15;
+            }
+
+            // 4. REST API -> API tampering / injection risk
+            if (appData.backend === 'REST API') {
+                const id = "R-004";
+                stride.push({ category: "Tampering", description: "REST API Endpoint Injection / DoS", component: "Network Layer", severity: "Medium", likelihood: "High" });
+                riskRegister.push({ id, description: "Attacker sends malformed requests to bypass server logic", asset: "Backend Logic", threatActor: "Remote Attacker", attackVector: "Input Injection", likelihood: 4, impact: 3, riskScore: 12, priority: "Medium" });
+                mitigations.push({ riskId: id, mitigation: "Implement strictly typed input validation and WAF.", masvs: ["MASVS-NETWORK-1"], chapter: 9 });
+                score -= 5;
+            }
+
+            // 5. Biometric -> Biometric spoofing risk
+            if (appData.auth.includes('Biometric')) {
+                const id = "R-005";
+                stride.push({ category: "Spoofing", description: "Biometric bypass via logic manipulation", component: "Auth Manager", severity: "High", likelihood: "Low" });
+                riskRegister.push({ id, description: "False positive biometric match or check bypass", asset: "Authentication", threatActor: "Local Physical Access", attackVector: "Logic Hooking", likelihood: 2, impact: 4, riskScore: 8, priority: "High" });
+                mitigations.push({ riskId: id, mitigation: "Use CryptoObject to bind biometric success to a cryptographic operation.", masvs: ["MASVS-AUTH-2"], chapter: 4 });
+                score -= 5;
+            }
+
+            // Baseline STRIDE and LINDDUN items if list is short
+            if (stride.length === 0) {
+                stride.push({ category: "Denial of Service", description: "Application instability via resource exhaustion", component: "Native Core", severity: "Low", likelihood: "Low" });
+            }
+            linddun.push({ category: "Disclosure", description: "Excessive metadata collection in system logs", component: "Logging Module", severity: "Low", likelihood: "Medium" });
+            linddun.push({ category: "Unawareness", description: "User not informed about data processing types", component: "Privacy Policy UI", severity: "Medium", likelihood: "High" });
+
+            return {
+                stride,
+                linddun,
+                riskRegister,
+                mitigations,
+                missingInfo,
+                securityScore: {
+                    overall: Math.max(10, score),
+                    architecture: Math.max(40, score + 5),
+                    authentication: Math.max(30, score - 10),
+                    platformInteraction: Math.max(50, score),
+                    network: Math.max(45, score - 5),
+                    codeQuality: Math.max(60, score + 10)
+                }
+            };
+        }
+
+        function renderResults(data) {
+            document.getElementById('viewLoading').style.display = 'none';
+            document.getElementById('viewResults').style.display = 'block';
+
+            // 1.5 Summary Tab
+            const summaryTab = document.getElementById('aiSummaryContent');
+            if (summaryTab && data.summary) {
+                summaryTab.innerHTML = `
+                    <div style="margin-bottom: 1rem;"><strong style="color: var(--cyan); text-transform: uppercase;">Executive Summary:</strong><br>${data.summary}</div>
+                    <div style="margin-bottom: 1rem;"><strong style="color: var(--cyan); text-transform: uppercase;">Identified Assets:</strong><br>
+                        <div style="margin-top: 5px;">${data.assets ? data.assets.map(a => `<span class="pill">${a}</span>`).join(' ') : 'None identified'}</div>
+                    </div>
+                    <div><strong style="color: var(--cyan); text-transform: uppercase;">Threat Actors:</strong><br>
+                        <div style="margin-top: 5px;">${data.actors ? data.actors.map(a => `<span class="pill" style="background: var(--red);">${a}</span>`).join(' ') : 'None identified'}</div>
+                    </div>
+                `;
+            } else if (summaryTab) {
+                summaryTab.innerHTML = `<p style="color: var(--text-dim);">Run an AI analysis to see the application summary, assets, and actors.</p>`;
+            }
+
+            // 1. Score
+            const overall = data.securityScore.overall;
+            document.getElementById('overallScoreNum').innerText = overall;
+            const offset = 440 - (440 * (overall / 100));
+            document.getElementById('overallDonut').style.strokeDashoffset = offset;
+
+            const updateBar = (id, val) => {
+                const bar = document.getElementById(`bar-${id}`);
+                const v = document.getElementById(`val-${id}`);
+                bar.style.width = val + '%';
+                v.innerText = val + '%';
+                if (val > 70) bar.style.background = 'var(--green)';
+                else if (val > 40) bar.style.background = 'var(--amber)';
+                else bar.style.background = 'var(--red)';
+            };
+
+            updateBar('arch', data.securityScore.architecture);
+            updateBar('auth', data.securityScore.authentication);
+            updateBar('platform', data.securityScore.platformInteraction);
+            updateBar('network', data.securityScore.network);
+            updateBar('code', data.securityScore.codeQuality);
+
+            // 2. STRIDE Table
+            const strideBody = document.querySelector('#tableStride tbody');
+            strideBody.innerHTML = '';
+            data.stride.forEach(s => {
+                strideBody.innerHTML += `<tr>
+                    <td><span class="badge badge-${s.severity.toLowerCase()}">${s.category}</span></td>
+                    <td>${s.description}</td>
+                    <td>${s.component}</td>
+                    <td>${s.severity}</td>
+                    <td>${s.likelihood}</td>
+                </tr>`;
+            });
+
+            // 3. LINDDUN Table
+            const linddunBody = document.querySelector('#tableLinddun tbody');
+            linddunBody.innerHTML = '';
+            data.linddun.forEach(l => {
+                linddunBody.innerHTML += `<tr>
+                    <td><span class="badge badge-${l.severity.toLowerCase()}">${l.category}</span></td>
+                    <td>${l.description}</td>
+                    <td>${l.component}</td>
+                    <td>${l.severity}</td>
+                    <td>${l.likelihood}</td>
+                </tr>`;
+            });
+
+            // 4. Risk Register
+            const riskBody = document.querySelector('#tableRisk tbody');
+            riskBody.innerHTML = '';
+            data.riskRegister.forEach(r => {
+                const scoreColor = r.likelihood * r.impact > 15 ? 'var(--red)' : (r.likelihood * r.impact > 10 ? 'var(--amber)' : 'var(--green)');
+                riskBody.innerHTML += `<tr>
+                    <td>${r.id}</td>
+                    <td>${r.description}</td>
+                    <td>${r.asset}</td>
+                    <td>${r.threatActor}</td>
+                    <td>${r.attackVector}</td>
+                    <td>${r.likelihood}</td>
+                    <td>${r.impact}</td>
+                    <td><span class="score-box" style="background:${scoreColor}">${r.riskScore}</span></td>
+                    <td><span class="badge badge-${r.priority.toLowerCase()}">${r.priority}</span></td>
+                </tr>`;
+            });
+
+            // 5. Mitigations
+            const mitBody = document.querySelector('#tableMitigation tbody');
+            mitBody.innerHTML = '';
+            data.mitigations.forEach(m => {
+                const pills = m.masvs.map(p => `<span class="pill">${p}</span>`).join('');
+                mitBody.innerHTML += `<tr>
+                    <td>${m.riskId}</td>
+                    <td>${m.mitigation}</td>
+                    <td>${pills}</td>
+                    <td>Chap.${m.chapter}</td>
+                </tr>`;
+            });
+
+            // 6. Missing Info
+            const gap = document.getElementById('missingInfoContainer');
+            gap.innerHTML = '';
+            data.missingInfo.forEach((q, i) => {
+                gap.innerHTML += `<div class="gap-item">${i+1}. ${q}</div>`;
+            });
+        }
+
+        // Export CSV
+        document.getElementById('btnExportCSV').onclick = () => {
+            if (!analysisResult) return;
+            let csv = "ID,Description,Asset,Threat Actor,Attack Vector,Likelihood,Impact,Score,Priority\n";
+            analysisResult.riskRegister.forEach(r => {
+                csv += `${r.id},"${r.description}","${r.asset}","${r.threatActor}","${r.attackVector}",${r.likelihood},${r.impact},${r.riskScore},${r.priority}\n`;
+            });
+            navigator.clipboard.writeText(csv);
+            alert("Risk Register copied to clipboard as CSV!");
+        };
+    </script>
+</body>
+</html>
